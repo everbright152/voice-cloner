@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - CHATTERBOX_API_KEY=${CHATTERBOX_API_KEY}
+      - DATABASE_URL=sqlite:///./app.db
+    volumes:
+      - ./app/static/uploads:/app/app/static/uploads
+    restart: always
