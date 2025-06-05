@@ -16,7 +16,10 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install chatterbox-tts directly from GitHub
+# Install CPU-only versions of PyTorch and torchaudio first (much smaller)
+RUN pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+
+# Then install chatterbox-tts (which will skip the CUDA dependencies since PyTorch is already installed)
 RUN pip install git+https://github.com/resemble-ai/chatterbox.git
 
 # Copy application code
