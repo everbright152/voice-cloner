@@ -80,8 +80,8 @@ def run_ui(host, port):
 def run_combined(host, port, reload):
     """Run both API and UI.
     
-    Integrates Gradio with FastAPI by mounting the Gradio app
-    at a specific path and running FastAPI as the main server.
+    In combined mode, we create a FastAPI app with Gradio mounted at /app.
+    This ensures proper integration between FastAPI and Gradio.
     
     Args:
         host: Host to bind to
@@ -90,19 +90,8 @@ def run_combined(host, port, reload):
     """
     logger.info(f"Starting combined server on {host}:{port}")
     
-    # Import here to avoid circular imports
-    from app.main import create_ui
-    import gradio as gr
-    from fastapi.staticfiles import StaticFiles
-    from app.api.app import app as fastapi_app
-    
-    # Create Gradio app
-    gradio_app = create_ui()
-    
-    # Mount Gradio app to FastAPI at /gradio-app
-    fastapi_app.mount("/gradio-app", StaticFiles(directory=gradio_app.cwd), name="gradio-app")
-    
-    # Run FastAPI with the mounted Gradio app
+    # We'll use the app from app.api.app which already has Gradio mounted
+    # This ensures proper integration between FastAPI and Gradio
     uvicorn.run(
         "app.api.app:app",
         host=host,

@@ -4,15 +4,14 @@ FastAPI application for the Voice Cloning Web App.
 This module initializes the FastAPI application and includes all routes.
 """
 import os
+import sys
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
-import gradio as gr
 
 from app.api import webhooks
-from app.main import create_ui
 
 # Create FastAPI app
 app = FastAPI(
@@ -39,9 +38,15 @@ app.include_router(webhooks.router)
 # Templates
 templates = Jinja2Templates(directory="app/templates")
 
-# Create Gradio UI and mount it to FastAPI
-gradio_app = create_ui()
-app = gr.mount_gradio_app(app, gradio_app, path="/app")
+# Only mount Gradio in combined mode (not in pure API mode)
+# Check if we're running in combined mode by looking at the command line arguments
+if len(sys.argv) > 1 and "--mode" in sys.argv and "api" not in sys.argv:
+    import gradio as gr
+    from app.main import create_ui
+    
+    # Create Gradio UI and mount it to FastAPI
+    gradio_app = create_ui()
+    app = gr.mount_gradio_app(app, gradio_app, path="/app")
 
 
 @app.get("/")
