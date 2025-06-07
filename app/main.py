@@ -386,6 +386,12 @@ def create_ui():
                     )
                     check_status_button = gr.Button("Check Status")
                     
+                    # Add auto-refresh checkbox
+                    auto_refresh = gr.Checkbox(
+                        label="Auto-refresh status (every 3 seconds)",
+                        value=True
+                    )
+                    
                     # Add upload progress indicator
                     upload_progress = gr.Textbox(
                         label="Upload Progress",
@@ -471,52 +477,21 @@ def create_ui():
             outputs=[progress_bar, training_status]
         )
         
-        # Auto-refresh training status
-        app.load(
-            fn=lambda: None,  # No-op function
-            inputs=None,
-            outputs=None,
-            _js="""
-            function() {
-                // Set up interval to refresh status
-                let intervalId;
-                
-                document.addEventListener('DOMContentLoaded', function() {
-                    // Find the job_id element by its label
-                    const jobIdElements = Array.from(document.querySelectorAll('label')).filter(
-                        el => el.textContent.includes('Job ID')
-                    );
-                    
-                    if (jobIdElements.length > 0) {
-                        const jobIdContainer = jobIdElements[0].closest('.gradio-container');
-                        const jobIdInput = jobIdContainer.querySelector('input');
-                        
-                        // Find the Check Status button
-                        const checkStatusButtons = Array.from(document.querySelectorAll('button')).filter(
-                            el => el.textContent.includes('Check Status')
-                        );
-                        
-                        if (checkStatusButtons.length > 0) {
-                            const checkStatusButton = checkStatusButtons[0];
-                            
-                            // Set up interval to click the button every 3 seconds if job_id has a value
-                            intervalId = setInterval(function() {
-                                if (jobIdInput && jobIdInput.value) {
-                                    checkStatusButton.click();
-                                }
-                            }, 3000);
-                        }
-                    }
-                });
-                
-                // Clean up interval when component is unloaded
-                return () => {
-                    if (intervalId) {
-                        clearInterval(intervalId);
-                    }
-                };
-            }
-            """
+        # Auto-refresh using Gradio's native interval functionality
+        # This is compatible with all Gradio versions
+        refresh_interval = gr.Number(value=3, visible=False)
+        
+        def conditional_update(job_id, auto_refresh_enabled):
+            if not job_id or not auto_refresh_enabled:
+                return 0, "Waiting for training to start..."
+            return update_training_display(job_id)
+        
+        gr.Interval(
+            fn=conditional_update,
+            inputs=[job_id, auto_refresh],
+            outputs=[progress_bar, training_status],
+            interval=3,
+            run_on_load=False
         )
         
         generate_button.click(
