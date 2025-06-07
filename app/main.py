@@ -211,7 +211,7 @@ def upload_and_train(audio_file, voice_name: str) -> Tuple[str, str]:
         # Wait a moment to ensure the job is initialized
         time.sleep(0.5)
         
-        return f"Voice training started. Progress will update automatically.", job_id
+        return f"Voice training started. Click 'Check Status' to see progress updates.", job_id
     except Exception as e:
         logger.error(f"Error in upload_and_train: {e}")
         return f"Error: {str(e)}", None
@@ -384,13 +384,10 @@ def create_ui():
                         label="Job ID",
                         visible=False
                     )
-                    check_status_button = gr.Button("Check Status")
+                    check_status_button = gr.Button("Check Status", variant="secondary")
                     
-                    # Add auto-refresh checkbox
-                    auto_refresh = gr.Checkbox(
-                        label="Auto-refresh status (every 3 seconds)",
-                        value=True
-                    )
+                    # Add note about manual refresh
+                    gr.Markdown("**Note:** Click 'Check Status' button to update training progress")
                     
                     # Add upload progress indicator
                     upload_progress = gr.Textbox(
@@ -471,27 +468,12 @@ def create_ui():
             outputs=[progress_bar, training_status]
         )
         
+        # Manual status check button - this is the only way to update status
+        # in this version to ensure compatibility with all Gradio versions
         check_status_button.click(
             fn=update_training_display,
             inputs=[job_id],
             outputs=[progress_bar, training_status]
-        )
-        
-        # Auto-refresh using Gradio's native interval functionality
-        # This is compatible with all Gradio versions
-        refresh_interval = gr.Number(value=3, visible=False)
-        
-        def conditional_update(job_id, auto_refresh_enabled):
-            if not job_id or not auto_refresh_enabled:
-                return 0, "Waiting for training to start..."
-            return update_training_display(job_id)
-        
-        gr.Interval(
-            fn=conditional_update,
-            inputs=[job_id, auto_refresh],
-            outputs=[progress_bar, training_status],
-            interval=3,
-            run_on_load=False
         )
         
         generate_button.click(
