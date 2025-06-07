@@ -6,9 +6,11 @@ This module initializes the Gradio interface for voice upload and training.
 import os
 import time
 import uuid
+import json
 import logging
+import threading
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 import gradio as gr
 from dotenv import load_dotenv
@@ -27,6 +29,10 @@ load_dotenv()
 UPLOAD_DIR = Path("app/static/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 MAX_UPLOAD_SIZE_MB = 100  # Maximum upload size in MB
+
+# Training job status storage (in-memory for demo)
+# In production, this would be a database
+TRAINING_JOBS = {}
 
 # Initialize Chatterbox client
 client = ChatterboxClient()
@@ -67,6 +73,79 @@ def save_uploaded_audio(audio_file) -> str:
         return None
 
 
+def get_file_size(file_path):
+    """Get file size with robust error handling for cross-platform compatibility.
+    
+    Args:
+        file_path: Path to the file
+        
+    Returns:
+        tuple: (success, size_mb or error_message)
+    """
+    try:
+        if file_path is None:
+            return False, "No file selected"
+            
+        # Handle different path formats from different platforms
+        if isinstance(file_path, list) and len(file_path) > 0:
+            # Some platforms may return a list with [path, sample_rate]
+            file_path = file_path[0]
+            
+        # Ensure path is a string
+        if not isinstance(file_path, (str, Path)):
+            return False, f"Invalid file path type: {type(file_path)}"
+            
+        # Check if file exists
+        if not os.path.exists(file_path):
+            return False, f"File not found: {file_path}"
+            
+        # Get file size
+        size_bytes = os.path.getsize(file_path)
+        size_mb = size_bytes / (1024 * 1024)
+        
+        return True, size_mb
+    except Exception as e:
+        logger.error(f"Error getting file size: {e}")
+        return False, f"Error checking file size: {str(e)}"
+
+
+def simulate_training_progress(job_id):
+    """Simulate training progress for demo purposes.
+    
+    In a real implementation, this would poll the actual API.
+    
+    Args:
+        job_id: ID of the training job
+    """
+    # Initialize job status
+    TRAINING_JOBS[job_id] = {
+        "status": "pending",
+        "progress": 0,
+        "message": "Initializing training...",
+        "start_time": time.time()
+    }
+    
+    # Simulate training progress
+    total_steps = 10
+    for step in range(1, total_steps + 1):
+        # Sleep to simulate processing time
+        time.sleep(3)
+        
+        # Update job status
+        progress = step / total_steps * 100
+        TRAINING_JOBS[job_id] = {
+            "status": "processing" if step < total_steps else "completed",
+            "progress": progress,
+            "message": f"Processing step {step}/{total_steps}" if step < total_steps else "Training completed",
+            "start_time": TRAINING_JOBS[job_id]["start_time"],
+            "elapsed_time": time.time() - TRAINING_JOBS[job_id]["start_time"]
+        }
+        
+        # If training is completed, break
+        if step == total_steps:
+            break
+
+
 def upload_and_train(audio_file, voice_name: str) -> Tuple[str, str]:
     """Upload audio file and start voice training.
     
@@ -84,12 +163,12 @@ def upload_and_train(audio_file, voice_name: str) -> Tuple[str, str]:
         return "Voice name is required", None
     
     try:
-        # Check if file exists
-        if not os.path.exists(audio_file):
-            return f"Audio file not found: {audio_file}", None
+        # Check file size with robust error handling
+        success, result = get_file_size(audio_file)
+        if not success:
+            return f"Error: {result}", None
             
-        # Check file size
-        file_size_mb = os.path.getsize(audio_file) / (1024 * 1024)
+        file_size_mb = result
         if file_size_mb > MAX_UPLOAD_SIZE_MB:
             return f"File too large: {file_size_mb:.1f}MB (max {MAX_UPLOAD_SIZE_MB}MB)", None
         
@@ -98,12 +177,18 @@ def upload_and_train(audio_file, voice_name: str) -> Tuple[str, str]:
         if not file_path:
             return "Failed to save audio file", None
         
-        # Upload to Chatterbox
-        # In a real implementation, this would call the actual API
-        # For now, we'll simulate the response
+        # Generate a job ID
         job_id = str(uuid.uuid4())
         
-        return f"Voice training started with job ID: {job_id}", job_id
+        # Start training in a background thread
+        # In a real implementation, this would call the actual API
+        threading.Thread(
+            target=simulate_training_progress,
+            args=(job_id,),
+            daemon=True
+        ).start()
+        
+        return f"Voice training started. Click 'Check Status' for updates.", job_id
     except Exception as e:
         logger.error(f"Error in upload_and_train: {e}")
         return f"Error: {str(e)}", None
@@ -122,16 +207,21 @@ def check_training_status(job_id: str) -> str:
         return "No job ID provided"
     
     try:
-        # In a real implementation, this would call the actual API
-        # For now, we'll simulate the response
-        statuses = ["pending", "processing", "completed"]
-        # Simulate progress based on time
-        status = statuses[int(time.time() % 3)]
+        # Get job status from storage
+        if job_id not in TRAINING_JOBS:
+            return "Job not found. It may have expired or been removed."
         
-        return f"Job status: {status}"
+        job = TRAINING_JOBS[job_id]
+        elapsed_time = time.time() - job["start_time"]
+        
+        # Format status message
+        if job["status"] == "completed":
+            return f"Training completed in {elapsed_time:.1f} seconds"
+        else:
+            return f"Status: {job['status']} | Progress: {job['progress']:.1f}% | Elapsed time: {elapsed_time:.1f}s | {job['message']}"
     except Exception as e:
         logger.error(f"Error in check_training_status: {e}")
-        return f"Error: {str(e)}"
+        return f"Error checking status: {str(e)}"
 
 
 def generate_speech(text: str, voice_id: str, emotion: float) -> Tuple[str, Optional[str]]:
@@ -204,6 +294,28 @@ def list_available_voices() -> List[str]:
         return []
 
 
+def update_upload_progress(audio_file, name):
+    """Update upload progress with robust error handling for cross-platform compatibility.
+    
+    Args:
+        audio_file: Uploaded audio file path
+        name: Voice name (not used, but required for Gradio)
+        
+    Returns:
+        str: Progress message
+    """
+    if audio_file is None:
+        return "No file selected"
+        
+    # Get file size with robust error handling
+    success, result = get_file_size(audio_file)
+    if not success:
+        return str(result)
+        
+    file_size_mb = result
+    return f"File size: {file_size_mb:.2f}MB / {MAX_UPLOAD_SIZE_MB}MB"
+
+
 def create_ui():
     """Create and launch the Gradio UI."""
     with gr.Blocks(title="Voice Cloning App", theme=gr.themes.Base()) as app:
@@ -243,6 +355,12 @@ def create_ui():
                         placeholder="No upload in progress",
                         interactive=False
                     )
+                    
+                    # Add auto-refresh checkbox
+                    auto_refresh = gr.Checkbox(
+                        label="Auto-refresh status (every 3 seconds)",
+                        value=True
+                    )
         
         with gr.Tab("Text-to-Speech"):
             with gr.Row():
@@ -279,15 +397,6 @@ def create_ui():
                     )
         
         # Set up event handlers
-        def update_upload_progress(audio_file, name):
-            if audio_file is None:
-                return "No file selected"
-            try:
-                file_size_mb = os.path.getsize(audio_file) / (1024 * 1024)
-                return f"File size: {file_size_mb:.2f}MB / {MAX_UPLOAD_SIZE_MB}MB"
-            except:
-                return "Error checking file size"
-        
         audio_input.change(
             fn=update_upload_progress,
             inputs=[audio_input, voice_name],
@@ -303,6 +412,22 @@ def create_ui():
         check_status_button.click(
             fn=check_training_status,
             inputs=[job_id],
+            outputs=[training_status]
+        )
+        
+        # Auto-refresh training status
+        def auto_refresh_status(job_id, auto_refresh_enabled):
+            if not job_id or not auto_refresh_enabled:
+                return None
+            return check_training_status(job_id)
+        
+        gr.on(
+            [auto_refresh.change, job_id.change],
+            lambda: None,
+            None,
+            None,
+            every=3,  # Run every 3 seconds
+            inputs=[job_id, auto_refresh],
             outputs=[training_status]
         )
         
