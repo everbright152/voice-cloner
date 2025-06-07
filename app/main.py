@@ -109,6 +109,11 @@ def get_file_size(file_path):
         return False, f"Error checking file size: {str(e)}"
 
 
+# Global variable to track the latest job status for UI updates
+# This ensures status is available even if browser events fail
+LATEST_JOB_STATUS = {}
+
+
 def simulate_training_progress(job_id):
     """Simulate training progress for demo purposes.
     
@@ -117,13 +122,19 @@ def simulate_training_progress(job_id):
     Args:
         job_id: ID of the training job
     """
+    global LATEST_JOB_STATUS
+    
     # Initialize job status
-    TRAINING_JOBS[job_id] = {
+    job_status = {
         "status": "pending",
         "progress": 0,
         "message": "Initializing training...",
-        "start_time": time.time()
+        "start_time": time.time(),
+        "elapsed_time": 0
     }
+    
+    TRAINING_JOBS[job_id] = job_status
+    LATEST_JOB_STATUS[job_id] = job_status
     
     # Simulate training progress
     total_steps = 10
@@ -133,13 +144,21 @@ def simulate_training_progress(job_id):
         
         # Update job status
         progress = step / total_steps * 100
-        TRAINING_JOBS[job_id] = {
+        elapsed_time = time.time() - job_status["start_time"]
+        
+        job_status = {
             "status": "processing" if step < total_steps else "completed",
             "progress": progress,
             "message": f"Processing step {step}/{total_steps}" if step < total_steps else "Training completed",
             "start_time": TRAINING_JOBS[job_id]["start_time"],
-            "elapsed_time": time.time() - TRAINING_JOBS[job_id]["start_time"]
+            "elapsed_time": elapsed_time
         }
+        
+        # Update both storage locations
+        TRAINING_JOBS[job_id] = job_status
+        LATEST_JOB_STATUS[job_id] = job_status
+        
+        logger.info(f"Updated job {job_id}: {job_status}")
         
         # If training is completed, break
         if step == total_steps:
@@ -182,13 +201,17 @@ def upload_and_train(audio_file, voice_name: str) -> Tuple[str, str]:
         
         # Start training in a background thread
         # In a real implementation, this would call the actual API
-        threading.Thread(
+        thread = threading.Thread(
             target=simulate_training_progress,
             args=(job_id,),
             daemon=True
-        ).start()
+        )
+        thread.start()
         
-        return f"Voice training started. Click 'Check Status' for updates.", job_id
+        # Wait a moment to ensure the job is initialized
+        time.sleep(0.5)
+        
+        return f"Voice training started. Progress will update automatically.", job_id
     except Exception as e:
         logger.error(f"Error in upload_and_train: {e}")
         return f"Error: {str(e)}", None
@@ -207,18 +230,23 @@ def check_training_status(job_id: str) -> str:
         return "No job ID provided"
     
     try:
-        # Get job status from storage
-        if job_id not in TRAINING_JOBS:
+        # First check the global latest status
+        if job_id in LATEST_JOB_STATUS:
+            job = LATEST_JOB_STATUS[job_id]
+        # Fall back to the main storage
+        elif job_id in TRAINING_JOBS:
+            job = TRAINING_JOBS[job_id]
+        else:
             return "Job not found. It may have expired or been removed."
         
-        job = TRAINING_JOBS[job_id]
-        elapsed_time = time.time() - job["start_time"]
+        # Calculate elapsed time if not provided
+        elapsed_time = job.get("elapsed_time", time.time() - job["start_time"])
         
         # Format status message
         if job["status"] == "completed":
-            return f"Training completed in {elapsed_time:.1f} seconds"
+            return f"✅ Training completed in {elapsed_time:.1f} seconds"
         else:
-            return f"Status: {job['status']} | Progress: {job['progress']:.1f}% | Elapsed time: {elapsed_time:.1f}s | {job['message']}"
+            return f"⏳ Status: {job['status']} | Progress: {job['progress']:.1f}% | Time: {elapsed_time:.1f}s | {job['message']}"
     except Exception as e:
         logger.error(f"Error in check_training_status: {e}")
         return f"Error checking status: {str(e)}"
@@ -338,6 +366,15 @@ def create_ui():
                     train_button = gr.Button("Start Training", variant="primary")
                 
                 with gr.Column():
+                    # Add a visual progress bar
+                    progress_bar = gr.Slider(
+                        label="Training Progress",
+                        minimum=0,
+                        maximum=100,
+                        value=0,
+                        interactive=False
+                    )
+                    
                     training_status = gr.Textbox(
                         label="Training Status",
                         placeholder="Training status will appear here",
@@ -354,12 +391,6 @@ def create_ui():
                         label="Upload Progress",
                         placeholder="No upload in progress",
                         interactive=False
-                    )
-                    
-                    # Add auto-refresh checkbox
-                    auto_refresh = gr.Checkbox(
-                        label="Auto-refresh status (every 3 seconds)",
-                        value=True
                     )
         
         with gr.Tab("Text-to-Speech"):
@@ -403,32 +434,89 @@ def create_ui():
             outputs=[upload_progress]
         )
         
+        # Function to update both status text and progress bar
+        def update_training_display(job_id):
+            if not job_id:
+                return 0, "No job ID provided"
+                
+            try:
+                # Get status message
+                status_message = check_training_status(job_id)
+                
+                # Get progress percentage for the progress bar
+                progress = 0
+                if job_id in LATEST_JOB_STATUS:
+                    progress = LATEST_JOB_STATUS[job_id].get("progress", 0)
+                elif job_id in TRAINING_JOBS:
+                    progress = TRAINING_JOBS[job_id].get("progress", 0)
+                    
+                return progress, status_message
+            except Exception as e:
+                logger.error(f"Error updating training display: {e}")
+                return 0, f"Error: {str(e)}"
+        
         train_button.click(
             fn=upload_and_train,
             inputs=[audio_input, voice_name],
             outputs=[training_status, job_id]
+        ).then(
+            fn=update_training_display,
+            inputs=[job_id],
+            outputs=[progress_bar, training_status]
         )
         
         check_status_button.click(
-            fn=check_training_status,
+            fn=update_training_display,
             inputs=[job_id],
-            outputs=[training_status]
+            outputs=[progress_bar, training_status]
         )
         
         # Auto-refresh training status
-        def auto_refresh_status(job_id, auto_refresh_enabled):
-            if not job_id or not auto_refresh_enabled:
-                return None
-            return check_training_status(job_id)
-        
-        gr.on(
-            [auto_refresh.change, job_id.change],
-            lambda: None,
-            None,
-            None,
-            every=3,  # Run every 3 seconds
-            inputs=[job_id, auto_refresh],
-            outputs=[training_status]
+        app.load(
+            fn=lambda: None,  # No-op function
+            inputs=None,
+            outputs=None,
+            _js="""
+            function() {
+                // Set up interval to refresh status
+                let intervalId;
+                
+                document.addEventListener('DOMContentLoaded', function() {
+                    // Find the job_id element by its label
+                    const jobIdElements = Array.from(document.querySelectorAll('label')).filter(
+                        el => el.textContent.includes('Job ID')
+                    );
+                    
+                    if (jobIdElements.length > 0) {
+                        const jobIdContainer = jobIdElements[0].closest('.gradio-container');
+                        const jobIdInput = jobIdContainer.querySelector('input');
+                        
+                        // Find the Check Status button
+                        const checkStatusButtons = Array.from(document.querySelectorAll('button')).filter(
+                            el => el.textContent.includes('Check Status')
+                        );
+                        
+                        if (checkStatusButtons.length > 0) {
+                            const checkStatusButton = checkStatusButtons[0];
+                            
+                            // Set up interval to click the button every 3 seconds if job_id has a value
+                            intervalId = setInterval(function() {
+                                if (jobIdInput && jobIdInput.value) {
+                                    checkStatusButton.click();
+                                }
+                            }, 3000);
+                        }
+                    }
+                });
+                
+                // Clean up interval when component is unloaded
+                return () => {
+                    if (intervalId) {
+                        clearInterval(intervalId);
+                    }
+                };
+            }
+            """
         )
         
         generate_button.click(
