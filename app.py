@@ -1,5 +1,10 @@
 """
-Main application file for the Enhanced Voice Cloning Application
+Enhanced Voice Cloning Application based on Hugging Face Chatterbox
+Features:
+- No character limit for text input
+- Dark mode support
+- All original parameters maintained
+- Responsive design for cross-platform compatibility
 """
 
 import random
@@ -7,7 +12,7 @@ import numpy as np
 import torch
 from chatterbox.src.chatterbox.tts import ChatterboxTTS
 import gradio as gr
-import os
+import spaces
 
 # Device configuration
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -46,6 +51,7 @@ def set_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
 
+@spaces.GPU
 def generate_tts_audio(
     text_input: str,
     audio_prompt_path_input: str,
@@ -430,9 +436,5 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as demo:
         ]
     )
 
-# Initialize character counter on page load
-demo.load(fn=lambda: count_characters("Now let's make my mum's favourite. So three mars bars into the pan. Then we add the tuna and just stir for a bit, just let the chocolate and fish infuse. A sprinkle of olive oil and some tomato ketchup. Now smell that. Oh boy this is going to be incredible."), outputs=char_counter)
-
-# For local development
-if __name__ == "__main__":
-    demo.launch(share=True)
+# Launch with sharing enabled for testing across devices
+demo.launch(share=True)

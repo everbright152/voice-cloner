@@ -1,116 +1,53 @@
 """
-Entry point for the Voice Cloning Web App.
-
-This module provides the entry point for running the application.
+Run script for the Enhanced Voice Cloning Application
 """
-import os
+
 import argparse
+import os
 import uvicorn
-import logging
-from dotenv import load_dotenv
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Load environment variables
-load_dotenv()
-
+from app.api.app import app as fastapi_app
 
 def parse_args():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Voice Cloning Web App")
-    parser.add_argument(
-        "--mode",
-        type=str,
-        choices=["api", "ui", "combined"],
-        default="combined",
-        help="Run mode: api, ui, or combined"
-    )
-    parser.add_argument(
-        "--host",
-        type=str,
-        default="0.0.0.0",
-        help="Host to bind to"
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=8000,
-        help="Port to bind to"
-    )
-    parser.add_argument(
-        "--reload",
-        action="store_true",
-        help="Enable auto-reload"
-    )
+    parser = argparse.ArgumentParser(description="Run the Enhanced Voice Cloning Application")
+    parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to run the server on")
+    parser.add_argument("--port", type=int, default=8000, help="Port to run the server on")
+    parser.add_argument("--reload", action="store_true", help="Enable auto-reload")
+    parser.add_argument("--mode", type=str, choices=["gradio", "fastapi", "combined"], default="combined",
+                        help="Run mode: gradio for UI only, fastapi for API only, combined for both")
     return parser.parse_args()
 
+def run_gradio(host, port, reload):
+    """Run the Gradio UI server"""
+    from app.main import demo
+    demo.launch(server_name=host, server_port=port, share=False, reload=reload)
 
-def run_api(host, port, reload):
-    """Run the FastAPI application.
-    
-    Args:
-        host: Host to bind to
-        port: Port to bind to
-        reload: Whether to enable auto-reload
-    """
-    logger.info(f"Starting API server on {host}:{port}")
-    uvicorn.run(
-        "app.api.app:app",
-        host=host,
-        port=port,
-        reload=reload
-    )
-
-
-def run_ui(host, port):
-    """Run the Gradio UI.
-    
-    Args:
-        host: Host to bind to
-        port: Port to bind to
-    """
-    logger.info(f"Starting UI server on {host}:{port}")
-    from app.main import create_ui
-    app = create_ui()
-    app.launch(server_name=host, server_port=port)
-
+def run_fastapi(host, port, reload):
+    """Run the FastAPI server"""
+    uvicorn.run("app.api.app:app", host=host, port=port, reload=reload)
 
 def run_combined(host, port, reload):
-    """Run both API and UI.
-    
-    In combined mode, we create a FastAPI app with Gradio mounted at /app.
-    This ensures proper integration between FastAPI and Gradio.
-    
-    Args:
-        host: Host to bind to
-        port: Port to bind to
-        reload: Whether to enable auto-reload
-    """
-    logger.info(f"Starting combined server on {host}:{port}")
-    
-    # We'll use the app from app.api.app which already has Gradio mounted
-    # This ensures proper integration between FastAPI and Gradio
+    """Run the combined FastAPI + Gradio server"""
     uvicorn.run(
-        "app.api.app:app",
+        fastapi_app,
         host=host,
         port=port,
         reload=reload
     )
 
-
 def main():
-    """Main entry point."""
     args = parse_args()
     
-    if args.mode == "api":
-        run_api(args.host, args.port, args.reload)
-    elif args.mode == "ui":
-        run_ui(args.host, args.port)
+    # Set environment variables
+    os.environ["HOST"] = args.host
+    os.environ["PORT"] = str(args.port)
+    
+    # Run in the specified mode
+    if args.mode == "gradio":
+        run_gradio(args.host, args.port, args.reload)
+    elif args.mode == "fastapi":
+        run_fastapi(args.host, args.port, args.reload)
     else:  # combined
         run_combined(args.host, args.port, args.reload)
-
 
 if __name__ == "__main__":
     main()

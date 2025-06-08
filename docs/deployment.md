@@ -1,132 +1,101 @@
-# Deployment Guide
+# Deployment Guide for Enhanced Voice Cloning Application
 
-This document provides instructions for deploying the Voice Cloning Web Application.
+This document provides instructions for deploying the Enhanced Voice Cloning Application to various cloud environments.
 
-## Local Development Deployment
+## Prerequisites
 
-### Prerequisites
-- Python 3.11+
-- Virtual environment (venv)
-- FFmpeg (for audio processing)
+- Docker and Docker Compose installed
+- Git installed
+- Access to a cloud provider (DigitalOcean, AWS, GCP, or Azure)
+- For GPU acceleration: NVIDIA GPU with CUDA support
 
-### Setup Steps
+## Local Deployment
 
 1. Clone the repository:
-```bash
-git clone <repository-url>
-cd voice-cloning-app
-```
+   ```bash
+   git clone https://github.com/yourusername/voice-cloning-app.git
+   cd voice-cloning-app
+   ```
 
-2. Create and activate a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
+2. Build and run with Docker Compose:
+   ```bash
+   docker-compose up --build
+   ```
 
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+3. Access the application at http://localhost:8000
 
-4. Set up environment variables:
-```bash
-# Create a .env file with the following variables
-CHATTERBOX_API_KEY=your_api_key_here
-DATABASE_URL=sqlite:///./app.db
-```
+## Cloud Deployment Options
 
-5. Run the application:
-```bash
-python run.py --mode combined --host 0.0.0.0 --port 8000
-```
+### DigitalOcean App Platform
 
-6. Access the application:
-   - Web UI: http://localhost:8000
-   - API Documentation: http://localhost:8000/docs
+1. Create a new app on DigitalOcean App Platform
+2. Connect your GitHub repository
+3. Configure as a Web Service with the following settings:
+   - Source Directory: `/`
+   - Build Command: `pip install -r requirements.txt`
+   - Run Command: `python run.py --host 0.0.0.0 --port 8080`
+4. Add environment variables if needed
+5. Deploy the application
 
-## Production Deployment
+### AWS Elastic Beanstalk
 
-### Vercel Deployment
+1. Initialize Elastic Beanstalk in your project:
+   ```bash
+   eb init
+   ```
 
-For deploying to Vercel:
+2. Create an environment:
+   ```bash
+   eb create voice-cloning-env
+   ```
 
-1. Install Vercel CLI:
-```bash
-npm install -g vercel
-```
+3. Deploy the application:
+   ```bash
+   eb deploy
+   ```
 
-2. Configure the project:
-```bash
-vercel init
-```
-
-3. Deploy:
-```bash
-vercel --prod
-```
-
-### Alternative Deployment Options
-
-#### Docker Deployment
+### Google Cloud Run
 
 1. Build the Docker image:
-```bash
-docker build -t voice-cloning-app .
-```
+   ```bash
+   docker build -t gcr.io/your-project-id/voice-cloning-app .
+   ```
 
-2. Run the container:
-```bash
-docker run -p 8000:8000 -e CHATTERBOX_API_KEY=your_api_key_here voice-cloning-app
-```
+2. Push to Google Container Registry:
+   ```bash
+   docker push gcr.io/your-project-id/voice-cloning-app
+   ```
 
-#### Heroku Deployment
+3. Deploy to Cloud Run:
+   ```bash
+   gcloud run deploy voice-cloning-app --image gcr.io/your-project-id/voice-cloning-app --platform managed
+   ```
 
-1. Install Heroku CLI and login:
-```bash
-heroku login
-```
+## GPU Acceleration
 
-2. Create a Heroku app:
-```bash
-heroku create voice-cloning-app
-```
+For optimal performance, deploy to a machine with NVIDIA GPU support:
 
-3. Set environment variables:
-```bash
-heroku config:set CHATTERBOX_API_KEY=your_api_key_here
-```
-
-4. Deploy:
-```bash
-git push heroku main
-```
+1. Ensure the host has NVIDIA drivers and CUDA installed
+2. Use the docker-compose.yml file which includes GPU configuration
+3. Run with:
+   ```bash
+   docker-compose up --build
+   ```
 
 ## Environment Variables
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| CHATTERBOX_API_KEY | API key for Resemble AI's Chatterbox | Yes |
-| DATABASE_URL | Database connection string | Yes |
-| PORT | Port to run the application on | No (default: 8000) |
-| HOST | Host to bind to | No (default: 0.0.0.0) |
-| LOG_LEVEL | Logging level | No (default: INFO) |
+- `HOST`: Host address (default: 0.0.0.0)
+- `PORT`: Port number (default: 8000)
 
-## Webhook Configuration
+## Troubleshooting
 
-To configure webhooks for Make.com integration:
+- **Application fails to start**: Check logs with `docker-compose logs`
+- **Model loading errors**: Ensure sufficient memory/GPU memory is available
+- **Slow performance**: Consider upgrading to a machine with GPU support
 
-1. Deploy the application and note the public URL
-2. In Make.com, create a webhook trigger pointing to:
-   - `https://your-app-url/webhooks/make`
-3. In Chatterbox dashboard, configure webhooks to point to:
-   - `https://your-app-url/webhooks/chatterbox`
+## Monitoring
 
-## Scaling Considerations
-
-For production use with multiple users:
-
-1. Migrate from SQLite to PostgreSQL
-2. Set up cloud storage for audio files
-3. Configure proper authentication and user management
-4. Set up a job queue for processing training requests
-5. Consider containerization and orchestration for horizontal scaling
+Monitor application health and performance using:
+- Cloud provider's built-in monitoring tools
+- Prometheus and Grafana for custom metrics
+- Application logs for detailed debugging
